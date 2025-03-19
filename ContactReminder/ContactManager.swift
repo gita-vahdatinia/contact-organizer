@@ -25,33 +25,46 @@ class ContactManager: ObservableObject {
         }
     }
     func importContactsFromiOS() {
-        let keys = [CNContactGivenNameKey, CNContactFamilyNameKey, CNContactPhoneNumbersKey] as [CNKeyDescriptor]
-        let request = CNContactFetchRequest(keysToFetch: keys)
+        DispatchQueue.global(qos: .userInitiated).async { // Run on a background thread
+            let keys = [CNContactGivenNameKey, CNContactFamilyNameKey, CNContactPhoneNumbersKey, CNContactBirthdayKey] as [CNKeyDescriptor]
+            let request = CNContactFetchRequest(keysToFetch: keys)
 
-        var newContacts: [ContactModel] = []
+            var newContacts: [ContactModel] = []
 
-        do {
-            try store.enumerateContacts(with: request) { (contact, _) in
-                let fullName = "\(contact.givenName) \(contact.familyName)"
-                let phone = contact.phoneNumbers.first?.value.stringValue
+            do {
+                try self.store.enumerateContacts(with: request) { (contact, _) in
+                    let fullName = "\(contact.givenName) \(contact.familyName)"
+                    let phone = contact.phoneNumbers.first?.value.stringValue
 
-                let newContact = ContactModel(name: fullName, phoneNumber: phone, group: .monthly) // Default to Monthly
-                newContacts.append(newContact)
+                    // Convert CNContact.birthday (DateComponents) into Date
+                    var birthdayDate: Date? = nil
+                    if let birthday = contact.birthday {
+                        let calendar = Calendar.current
+                        birthdayDate = calendar.date(from: birthday) // Convert from DateComponents to Date
+                    }
 
-                // Save to Core Data
-                let entity = ContactEntity(context: context)
-                entity.id = newContact.id
-                entity.name = newContact.name
-                entity.phoneNumber = newContact.phoneNumber
-                entity.group = newContact.group.rawValue
+                    print("Imported contact: \(fullName), Birthday: \(String(describing: birthdayDate))") // Debugging print
+
+                    let newContact = ContactModel(name: fullName, phoneNumber: phone, birthday: birthdayDate, group: .monthly)
+                    newContacts.append(newContact)
+
+                    // Save to Core Data
+                    let entity = ContactEntity(context: self.context)
+                    entity.id = newContact.id
+                    entity.name = newContact.name
+                    entity.phoneNumber = newContact.phoneNumber
+                    entity.group = newContact.group.rawValue
+                    entity.birthday = birthdayDate
+                }
+
+                CoreDataManager.shared.save()
+
+                DispatchQueue.main.async {
+                    self.fetchContacts() // Refresh the UI on the main thread
+                }
+            } catch {
+                print("Failed to import contacts: \(error)")
             }
-
-            CoreDataManager.shared.save()
-            DispatchQueue.main.async {
-                self.fetchContacts() // Refresh the UI
-            }
-        } catch {
-            print("Failed to import contacts: \(error)")
         }
     }
 

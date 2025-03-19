@@ -3,7 +3,7 @@ import SwiftUI
 struct ContactsView: View {
     @ObservedObject var contactManager = ContactManager()
 
-    var body: some View {
+    var body: some View {  
         NavigationView {
             List {
                 ForEach(ContactGroup.allCases, id: \.self) { group in
@@ -33,13 +33,21 @@ struct ContactRow: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 5) {
             Text(contact.name).font(.headline)
+            
+            if let birthday = contact.birthday {
+                Text("🎂 Birthday: \(formattedDate(birthday))")
+                    .font(.subheadline)
+                    .foregroundColor(.blue)
+            }
+
+            
             if let phone = contact.phoneNumber {
                 Text(phone)
                     .font(.subheadline)
                     .foregroundColor(.gray)
             }
             
-            Picker("Group", selection: Binding(
+            Picker("", selection: Binding(
                 get: { contact.group },
                 set: { newGroup in
                     contactManager.updateContactGroup(contact: contact, newGroup: newGroup)
@@ -53,5 +61,10 @@ struct ContactRow: View {
         }
         .padding(.vertical, 5)
     }
+    
+    private func formattedDate(_ date: Date) -> String {
+        let formatter = DateFormatter()
+        formatter.dateStyle = .long
+        return formatter.string(from: date)
+    }
 }
-
