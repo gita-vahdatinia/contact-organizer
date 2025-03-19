@@ -7,6 +7,10 @@ struct ContactsView: View {
     var body: some View {
         NavigationView {
             List {
+                NavigationLink(destination: BirthdayMonthView(contactManager: contactManager)) {
+                    Text("View Birthdays by Month")
+                }
+                
                 Toggle("Reverse Order", isOn: $reverseOrder)
                 
                 ForEach(reverseOrder ? ContactGroup.allCases.reversed() : ContactGroup.allCases, id: \.self) { group in
@@ -32,6 +36,7 @@ struct ContactsView: View {
 struct ContactRow: View {
     var contact: ContactModel
     var contactManager: ContactManager
+    @Environment(\.openURL) private var openURL
 
     var body: some View {
         VStack(alignment: .leading, spacing: 5) {
@@ -47,7 +52,12 @@ struct ContactRow: View {
             if let phone = contact.phoneNumber {
                 Text(phone)
                     .font(.subheadline)
-                    .foregroundColor(.gray)
+                    .foregroundColor(.blue)
+                    .onTapGesture {
+                        if let url = URL(string: "sms:\(phone.replacingOccurrences(of: " ", with: ""))") {
+                            openURL(url)
+                        }
+                    }
             }
             
             Picker("", selection: Binding(
