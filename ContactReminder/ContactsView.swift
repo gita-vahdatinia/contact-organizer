@@ -2,11 +2,14 @@ import SwiftUI
 
 struct ContactsView: View {
     @ObservedObject var contactManager = ContactManager()
+    @State private var reverseOrder = false
 
-    var body: some View {  
+    var body: some View {
         NavigationView {
             List {
-                ForEach(ContactGroup.allCases, id: \.self) { group in
+                Toggle("Reverse Order", isOn: $reverseOrder)
+                
+                ForEach(reverseOrder ? ContactGroup.allCases.reversed() : ContactGroup.allCases, id: \.self) { group in
                     let filteredContacts = contactManager.contacts.filter { $0.group == group }
 
                     if !filteredContacts.isEmpty {
