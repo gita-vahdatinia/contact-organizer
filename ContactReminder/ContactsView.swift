@@ -1,55 +1,78 @@
 import SwiftUI
+import Contacts
+
+import SwiftUI
+import Contacts
 
 struct ContactsView: View {
     @ObservedObject var contactManager = ContactManager()
-    @State private var reverseOrder = false
+    @State private var iCloudLists: [CNGroup] = []
+    @State private var contactsByGroup: [String: [CNContact]] = [:] // Stores contacts per group
 
     var body: some View {
         NavigationView {
             List {
-                NavigationLink(destination: BirthdayMonthView(contactManager: contactManager)) {
-                    Text("View Birthdays by Month")
-                }
-                
-                Toggle("Reverse Order", isOn: $reverseOrder)
-                
-                ForEach(reverseOrder ? ContactGroup.allCases.reversed() : ContactGroup.allCases, id: \.self) { group in
-                    let filteredContacts = contactManager.contacts.filter { $0.group == group }
-
-                    if !filteredContacts.isEmpty {
-                        Section(header: Text(group.rawValue)) {
-                            ForEach(filteredContacts) { contact in
-                                ContactRow(contact: contact, contactManager: contactManager)
-                            }
-                        }
-                    }
+                ForEach(iCloudLists, id: \.identifier) { group in
+                    GroupSection(group: group, contacts: contactsByGroup[group.identifier] ?? [])
                 }
             }
-            .navigationTitle("Contact Groups")
+            .navigationTitle("iCloud Contact Lists")
             .onAppear {
-                contactManager.fetchContacts()
+                loadGroupsAndContacts()
+            }
+        }
+    }
+
+    private func loadGroupsAndContacts() {
+        iCloudLists = contactManager.fetchiCloudContactLists()
+        var newContactsByGroup: [String: [CNContact]] = [:]
+        for group in iCloudLists {
+            newContactsByGroup[group.identifier] = contactManager.fetchContactsInGroup(groupIdentifier: group.identifier)
+        }
+        contactsByGroup = newContactsByGroup
+    }
+}
+
+struct GroupSection: View {
+    var group: CNGroup
+    var contacts: [CNContact]
+
+    var body: some View {
+        Section(header: Text(group.name)) {
+            if contacts.isEmpty {
+                Text("No contacts in this list").foregroundColor(.gray)
+            } else {
+                ForEach(contacts, id: \.identifier) { contact in
+                    ContactRow(contact: contact)
+                }
             }
         }
     }
 }
 
+
+
+
 struct ContactRow: View {
-    var contact: ContactModel
-    var contactManager: ContactManager
+    var contact: CNContact
     @Environment(\.openURL) private var openURL
 
     var body: some View {
         VStack(alignment: .leading, spacing: 5) {
-            Text(contact.name).font(.headline)
-            
-            if let birthday = contact.birthday {
-                Text("🎂 Birthday: \(formattedDate(birthday))")
-                    .font(.subheadline)
-                    .foregroundColor(.blue)
+            Text("\(contact.givenName) \(contact.familyName)").font(.headline)
+
+            if let birthdayComponents = contact.birthday {
+                let calendar = Calendar.current
+                if let birthdayDate = calendar.date(from: birthdayComponents) {
+                    Text("🎂 Birthday: \(formattedDate(birthdayDate))")
+                        .font(.subheadline)
+                        .foregroundColor(.blue)
+                }
+            } else {
+                Text("No birthday available").font(.subheadline).foregroundColor(.gray)
             }
 
-            
-            if let phone = contact.phoneNumber {
+            if let phone = contact.phoneNumbers.first?.value.stringValue {
                 Text(phone)
                     .font(.subheadline)
                     .foregroundColor(.blue)
@@ -59,18 +82,6 @@ struct ContactRow: View {
                         }
                     }
             }
-            
-            Picker("", selection: Binding(
-                get: { contact.group },
-                set: { newGroup in
-                    contactManager.updateContactGroup(contact: contact, newGroup: newGroup)
-                }
-            )) {
-                ForEach(ContactGroup.allCases, id: \.self) { group in
-                    Text(group.rawValue).tag(group)
-                }
-            }
-            .pickerStyle(MenuPickerStyle()) // Dropdown picker
         }
         .padding(.vertical, 5)
     }

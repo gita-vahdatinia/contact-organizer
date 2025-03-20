@@ -24,11 +24,18 @@ class ContactManager: ObservableObject {
             print("Error fetching contacts from Core Data: \(error)")
         }
     }
+        
     func importContactsFromiOS() {
-        DispatchQueue.global(qos: .userInitiated).async { // Run on a background thread
-            let keys = [CNContactGivenNameKey, CNContactFamilyNameKey, CNContactPhoneNumbersKey, CNContactBirthdayKey] as [CNKeyDescriptor]
+        DispatchQueue.global(qos: .userInitiated).async {
+            let keys = [
+                CNContactGivenNameKey as CNKeyDescriptor,
+                CNContactFamilyNameKey as CNKeyDescriptor,
+                CNContactPhoneNumbersKey as CNKeyDescriptor,
+                CNContactBirthdayKey as CNKeyDescriptor,  // ✅ Ensure birthday is requested
+                CNContactIdentifierKey as CNKeyDescriptor // ✅ Ensure identifier is requested
+            ]
+            
             let request = CNContactFetchRequest(keysToFetch: keys)
-
             var newContacts: [ContactModel] = []
 
             do {
@@ -40,12 +47,14 @@ class ContactManager: ObservableObject {
                     var birthdayDate: Date? = nil
                     if let birthday = contact.birthday {
                         let calendar = Calendar.current
-                        birthdayDate = calendar.date(from: birthday) // Convert from DateComponents to Date
+                        birthdayDate = calendar.date(from: birthday)
                     }
 
-                    print("Imported contact: \(fullName), Birthday: \(String(describing: birthdayDate))") // Debugging print
+                    print("Imported contact: \(fullName), Birthday: \(String(describing: birthdayDate))")
 
-                    let newContact = ContactModel(name: fullName, phoneNumber: phone, birthday: birthdayDate, group: .monthly)
+                    let newContact = ContactModel(
+                        name: fullName, phoneNumber: phone, birthday: birthdayDate, group: .never
+                    )
                     newContacts.append(newContact)
 
                     // Save to Core Data
@@ -60,7 +69,7 @@ class ContactManager: ObservableObject {
                 CoreDataManager.shared.save()
 
                 DispatchQueue.main.async {
-                    self.fetchContacts() // Refresh the UI on the main thread
+                    self.fetchContacts() // Refresh the UI
                 }
             } catch {
                 print("Failed to import contacts: \(error)")
@@ -68,6 +77,49 @@ class ContactManager: ObservableObject {
         }
     }
 
+    func addContactToiCloudList(contact: CNMutableContact, listName: String) {
+        let store = CNContactStore()
+        
+        // Find the group
+        let predicate = CNGroup.predicateForGroups(withIdentifiers: [])
+        do {
+            let groups = try store.groups(matching: predicate)
+            if let targetGroup = groups.first(where: { $0.name == listName }) {
+                let saveRequest = CNSaveRequest()
+                saveRequest.addMember(contact, to: targetGroup)
+                
+                try store.execute(saveRequest)
+                print("✅ Successfully added \(contact.givenName) to \(listName)")
+            } else {
+                print("❌ Group \(listName) not found.")
+            }
+        } catch {
+            print("❌ Failed to add contact to iCloud list: \(error)")
+        }
+    }
+
+
+    func createiCloudContactList(listName: String) {
+        let store = CNContactStore()
+        
+        guard let iCloudContainer = fetchiCloudContactAccount() else {
+            print("❌ No iCloud Contact Account Found.")
+            return
+        }
+        
+        let newGroup = CNMutableGroup()
+        newGroup.name = listName
+        
+        let saveRequest = CNSaveRequest()
+        saveRequest.add(newGroup, toContainerWithIdentifier: iCloudContainer.identifier)
+        
+        do {
+            try store.execute(saveRequest)
+            print("✅ Successfully created contact list: \(listName) in iCloud")
+        } catch {
+            print("❌ Failed to create contact list: \(error)")
+        }
+    }
 
     func saveContact(_ contact: ContactModel) {
         let entity = ContactEntity(context: context)
@@ -112,4 +164,65 @@ class ContactManager: ObservableObject {
             print("Error deleting contact: \(error)")
         }
     }
+
+    func fetchiCloudContactAccount() -> CNContainer? {
+        let store = CNContactStore()
+        
+        do {
+            let containers = try store.containers(matching: nil)
+            for container in containers {
+                if container.name.lowercased().contains("icloud") { // Check by name
+                    print("✅ Found iCloud Contact Account: \(container.name)")
+                    return container
+                }
+            }
+        } catch {
+            print("❌ Failed to fetch iCloud Contact Account: \(error)")
+        }
+        
+        return nil
+    }
+
+
+
+    func fetchContactsInGroup(groupIdentifier: String) -> [CNContact] {
+        let store = CNContactStore()
+        var contacts: [CNContact] = []
+
+        let predicate = CNContact.predicateForContactsInGroup(withIdentifier: groupIdentifier)
+        let keysToFetch: [CNKeyDescriptor] = [
+            CNContactGivenNameKey as CNKeyDescriptor,
+            CNContactFamilyNameKey as CNKeyDescriptor,
+            CNContactPhoneNumbersKey as CNKeyDescriptor,
+            CNContactBirthdayKey as CNKeyDescriptor,  // ✅ Request birthday explicitly
+            CNContactIdentifierKey as CNKeyDescriptor // ✅ Ensure we get a unique identifier
+        ]
+
+        do {
+            contacts = try store.unifiedContacts(matching: predicate, keysToFetch: keysToFetch)
+            print("📂 Found \(contacts.count) contacts in group \(groupIdentifier)")
+        } catch {
+            print("❌ Failed to fetch contacts for group \(groupIdentifier): \(error)")
+        }
+
+        return contacts
+    }
+
+
+    func fetchiCloudContactLists() -> [CNGroup] {
+        let store = CNContactStore()
+        var groups: [CNGroup] = []
+        
+        do {
+            groups = try store.groups(matching: nil)
+            for group in groups {
+                print("📂 Found Contact List: \(group.name) - ID: \(group.identifier)")
+            }
+        } catch {
+            print("❌ Failed to fetch iCloud Contact Lists: \(error)")
+        }
+        
+        return groups
+    }
+
 }

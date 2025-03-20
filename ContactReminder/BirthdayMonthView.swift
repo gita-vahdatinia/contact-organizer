@@ -38,14 +38,33 @@ struct BirthdayMonthView: View {
                 
                 List {
                     ForEach(filteredContacts) { contact in
-                        VStack(alignment: .leading) {
-                            Text(contact.name)
-                                .font(.headline)
-                            Text("Birthday: \(formattedDate(contact.birthday!))")
-                                .font(.subheadline)
-                                .foregroundColor(.blue)
+                        if let phoneNumber = contact.phoneNumber {
+                            Button(action: {
+                                if let url = URL(string: "sms:\(phoneNumber.replacingOccurrences(of: " ", with: ""))") {
+                                    UIApplication.shared.open(url)
+                                }
+                            }) {
+                                VStack(alignment: .leading) {
+                                    Text(contact.name)
+                                        .font(.headline)
+                                        .foregroundColor(.primary)
+                                    Text("Birthday: \(formattedDate(contact.birthday!))")
+                                        .font(.subheadline)
+                                        .foregroundColor(.blue)
+                                }
+                                .padding(.vertical, 5)
+                            }
+                        } else {
+                            // For contacts without phone numbers, show non-tappable view
+                            VStack(alignment: .leading) {
+                                Text(contact.name)
+                                    .font(.headline)
+                                Text("Birthday: \(formattedDate(contact.birthday!))")
+                                    .font(.subheadline)
+                                    .foregroundColor(.blue)
+                            }
+                            .padding(.vertical, 5)
                         }
-                        .padding(.vertical, 5)
                     }
                 }
             }
