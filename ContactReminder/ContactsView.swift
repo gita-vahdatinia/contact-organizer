@@ -1,35 +1,36 @@
 import SwiftUI
 import Contacts
 
-import SwiftUI
-import Contacts
-
 struct ContactsView: View {
     @ObservedObject var contactManager = ContactManager()
     @State private var iCloudLists: [CNGroup] = []
-    @State private var contactsByGroup: [String: [CNContact]] = [:] // Stores contacts per group
+    @State private var showingBirthdayView = false
 
     var body: some View {
         NavigationView {
             List {
                 ForEach(iCloudLists, id: \.identifier) { group in
-                    GroupSection(group: group, contacts: contactsByGroup[group.identifier] ?? [])
+                    GroupSection(group: group, contacts: contactManager.fetchContactsInGroup(groupIdentifier: group.identifier))
                 }
             }
             .navigationTitle("iCloud Contact Lists")
+            .toolbar {
+                ToolbarItem(placement: .navigationBarTrailing) {
+                    Button(action: {
+                        showingBirthdayView.toggle()
+                    }) {
+                        Image(systemName: "gift.fill")
+                            .foregroundColor(.blue)
+                    }
+                }
+            }
+            .sheet(isPresented: $showingBirthdayView) {
+                BirthdayMonthView(contactManager: contactManager)
+            }
             .onAppear {
-                loadGroupsAndContacts()
+                iCloudLists = contactManager.fetchiCloudContactLists()
             }
         }
-    }
-
-    private func loadGroupsAndContacts() {
-        iCloudLists = contactManager.fetchiCloudContactLists()
-        var newContactsByGroup: [String: [CNContact]] = [:]
-        for group in iCloudLists {
-            newContactsByGroup[group.identifier] = contactManager.fetchContactsInGroup(groupIdentifier: group.identifier)
-        }
-        contactsByGroup = newContactsByGroup
     }
 }
 
@@ -50,26 +51,20 @@ struct GroupSection: View {
     }
 }
 
-
-
-
 struct ContactRow: View {
     var contact: CNContact
     @Environment(\.openURL) private var openURL
 
     var body: some View {
         VStack(alignment: .leading, spacing: 5) {
-            Text("\(contact.givenName) \(contact.familyName)").font(.headline)
+            Text("\(contact.givenName) \(contact.familyName)")
+                .font(.headline)
 
-            if let birthdayComponents = contact.birthday {
-                let calendar = Calendar.current
-                if let birthdayDate = calendar.date(from: birthdayComponents) {
-                    Text("🎂 Birthday: \(formattedDate(birthdayDate))")
-                        .font(.subheadline)
-                        .foregroundColor(.blue)
-                }
-            } else {
-                Text("No birthday available").font(.subheadline).foregroundColor(.gray)
+            if let birthdayComponents = contact.birthday,
+               let birthdayDate = Calendar.current.date(from: birthdayComponents) {
+                Text("🎂 Birthday: \(formattedDate(birthdayDate))")
+                    .font(.subheadline)
+                    .foregroundColor(.blue)
             }
 
             if let phone = contact.phoneNumbers.first?.value.stringValue {
@@ -91,4 +86,4 @@ struct ContactRow: View {
         formatter.dateStyle = .long
         return formatter.string(from: date)
     }
-}
+} 
