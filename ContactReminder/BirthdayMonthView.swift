@@ -96,16 +96,24 @@ struct ContactInfoView: View {
                 .foregroundColor(.primary)
             
             if let birthday = contact.birthday {
-                Text("Birthday: \(formattedDate(birthday))")
+                Text("Birthday: \(formattedBirthday(birthday))")
                     .font(.subheadline)
                     .foregroundColor(.blue)
             }
         }
     }
     
-    private func formattedDate(_ date: Date) -> String {
+    private func formattedBirthday(_ date: Date) -> String {
+        let calendar = Calendar.current
+        let year = calendar.component(.year, from: date)
+        
         let formatter = DateFormatter()
-        formatter.dateStyle = .long
+        // If the year is 1 or 1900 (common placeholder for no year), only show month and day
+        if year <= 1900 {
+            formatter.dateFormat = "MMMM d"
+        } else {
+            formatter.dateStyle = .long
+        }
         return formatter.string(from: date)
     }
 } 

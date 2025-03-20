@@ -13,7 +13,8 @@ class ContactManager: ObservableObject {
         CNContactFamilyNameKey as CNKeyDescriptor,
         CNContactPhoneNumbersKey as CNKeyDescriptor,
         CNContactBirthdayKey as CNKeyDescriptor,
-        CNContactIdentifierKey as CNKeyDescriptor
+        CNContactIdentifierKey as CNKeyDescriptor,
+        CNContactNoteKey as CNKeyDescriptor
     ]
     
     func fetchContacts() {
@@ -192,6 +193,27 @@ class ContactManager: ObservableObject {
         }
         
         return nil
+    }
+
+    func updateContactNotes(contact: CNContact, newNote: String) {
+        let mutableContact = contact.mutableCopy() as! CNMutableContact
+        let dateFormatter = DateFormatter()
+        dateFormatter.dateStyle = .medium
+        dateFormatter.timeStyle = .short
+        
+        let timestamp = dateFormatter.string(from: Date())
+        let updatedNote = "[\(timestamp)]\n\(newNote)\n\n\(contact.note)"
+        mutableContact.note = updatedNote
+        
+        let saveRequest = CNSaveRequest()
+        saveRequest.update(mutableContact)
+        
+        do {
+            try store.execute(saveRequest)
+            print("✅ Successfully updated contact notes")
+        } catch {
+            print("❌ Failed to update contact notes: \(error)")
+        }
     }
 }
 
