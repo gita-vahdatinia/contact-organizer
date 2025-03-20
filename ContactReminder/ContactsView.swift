@@ -100,7 +100,6 @@ struct ContactRow: View {
     let contact: CNContact
     @ObservedObject var contactManager: ContactManager
     @Environment(\.openURL) private var openURL
-    @State private var showingNotes = false
     
     private var fullName: String {
         "\(contact.givenName) \(contact.familyName)".trimmingCharacters(in: .whitespaces)
@@ -143,18 +142,8 @@ struct ContactRow: View {
             }
             
             Spacer()
-            
-            Button(action: {
-                showingNotes.toggle()
-            }) {
-                Image(systemName: "note.text")
-                    .foregroundColor(.blue)
-            }
         }
         .padding(.vertical, 5)
-        .sheet(isPresented: $showingNotes) {
-            NotesView(contact: contact, contactManager: contactManager)
-        }
     }
     
     private func formattedDate(_ date: Date) -> String {
@@ -169,55 +158,5 @@ struct ContactRow: View {
             formatter.dateStyle = .long
         }
         return formatter.string(from: date)
-    }
-}
-
-struct NotesView: View {
-    let contact: CNContact
-    @ObservedObject var contactManager: ContactManager
-    @State private var newNote: String = ""
-    @Environment(\.dismiss) private var dismiss
-    
-    var body: some View {
-        NavigationView {
-            VStack {
-                // New note input
-                TextField("Add a new note...", text: $newNote)
-                    .textFieldStyle(RoundedBorderTextFieldStyle())
-                    .padding()
-                
-                Button(action: {
-                    if !newNote.isEmpty {
-                        contactManager.updateContactNotes(contact: contact, newNote: newNote)
-                        newNote = ""
-                        dismiss()
-                    }
-                }) {
-                    Text("Add Note")
-                        .foregroundColor(.white)
-                        .padding()
-                        .background(Color.blue)
-                        .cornerRadius(8)
-                }
-                
-                // Existing notes
-                ScrollView {
-                    Text(contact.note)
-                        .padding()
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                }
-                
-                Spacer()
-            }
-            .navigationTitle("Notes for \(contact.givenName)")
-            .navigationBarTitleDisplayMode(.inline)
-            .toolbar {
-                ToolbarItem(placement: .navigationBarTrailing) {
-                    Button("Done") {
-                        dismiss()
-                    }
-                }
-            }
-        }
     }
 } 

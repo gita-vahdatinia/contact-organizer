@@ -13,23 +13,31 @@ class ContactManager: ObservableObject {
         CNContactFamilyNameKey as CNKeyDescriptor,
         CNContactPhoneNumbersKey as CNKeyDescriptor,
         CNContactBirthdayKey as CNKeyDescriptor,
-        CNContactIdentifierKey as CNKeyDescriptor,
-        CNContactNoteKey as CNKeyDescriptor
+        CNContactIdentifierKey as CNKeyDescriptor
     ]
     
     func fetchContacts() {
-        let request: NSFetchRequest<ContactEntity> = ContactEntity.fetchRequest()
-        
-        do {
-            let savedContacts = try context.fetch(request)
-            
-            if savedContacts.isEmpty {
-                importContactsFromiOS()
-            } else {
-                contacts = savedContacts.map { $0.toModel() }
+        // Request authorization first
+        store.requestAccess(for: .contacts) { [weak self] granted, error in
+            guard granted else {
+                print("Access to contacts denied: \(String(describing: error))")
+                return
             }
-        } catch {
-            print("Error fetching contacts from Core Data: \(error)")
+            
+            // Continue with existing fetchContacts code
+            let request: NSFetchRequest<ContactEntity> = ContactEntity.fetchRequest()
+            
+            do {
+                let savedContacts = try self?.context.fetch(request)
+                
+                if savedContacts?.isEmpty ?? true {
+                    self?.importContactsFromiOS()
+                } else {
+                    self?.contacts = savedContacts?.map { $0.toModel() } ?? []
+                }
+            } catch {
+                print("Error fetching contacts from Core Data: \(error)")
+            }
         }
     }
     
@@ -193,27 +201,6 @@ class ContactManager: ObservableObject {
         }
         
         return nil
-    }
-
-    func updateContactNotes(contact: CNContact, newNote: String) {
-        let mutableContact = contact.mutableCopy() as! CNMutableContact
-        let dateFormatter = DateFormatter()
-        dateFormatter.dateStyle = .medium
-        dateFormatter.timeStyle = .short
-        
-        let timestamp = dateFormatter.string(from: Date())
-        let updatedNote = "[\(timestamp)]\n\(newNote)\n\n\(contact.note)"
-        mutableContact.note = updatedNote
-        
-        let saveRequest = CNSaveRequest()
-        saveRequest.update(mutableContact)
-        
-        do {
-            try store.execute(saveRequest)
-            print("✅ Successfully updated contact notes")
-        } catch {
-            print("❌ Failed to update contact notes: \(error)")
-        }
     }
 }
 
