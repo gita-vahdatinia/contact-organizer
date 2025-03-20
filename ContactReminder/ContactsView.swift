@@ -26,9 +26,10 @@ struct ContactsView: View {
                         contactManager: contactManager
                     )
                 }
+                .onMove(perform: moveGroups)
             }
             .navigationTitle("Baddies Only")
-                .navigationBarTitleDisplayMode(.inline)
+            .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .navigationBarTrailing) {
                     Button(action: {
@@ -53,9 +54,31 @@ struct ContactsView: View {
         }
     }
     
+    private func moveGroups(from source: IndexSet, to destination: Int) {
+        iCloudLists.move(fromOffsets: source, toOffset: destination)
+        saveGroupOrder()
+    }
+    
+    private func saveGroupOrder() {
+        let groupOrder = iCloudLists.map { $0.identifier }
+        UserDefaults.standard.set(groupOrder, forKey: "GroupOrder")
+    }
+    
     private func refreshData() {
-        iCloudLists = contactManager.fetchiCloudContactLists()
-        contactManager.fetchContacts()
+        let newLists = contactManager.fetchiCloudContactLists()
+        
+        let savedOrder = UserDefaults.standard.array(forKey: "GroupOrder") as? [String] ?? []
+        
+        iCloudLists = newLists.sorted { first, second in
+            let firstIndex = savedOrder.firstIndex(of: first.identifier) ?? Int.max
+            let secondIndex = savedOrder.firstIndex(of: second.identifier) ?? Int.max
+            return firstIndex < secondIndex
+        }
+        
+        let remainingLists = newLists.filter { group in
+            !iCloudLists.contains(where: { $0.identifier == group.identifier })
+        }
+        iCloudLists.append(contentsOf: remainingLists)
     }
 }
 
@@ -85,6 +108,9 @@ struct GroupSection: View {
             }
         } label: {
             HStack {
+                Image(systemName: "line.3.horizontal")
+                    .foregroundColor(.gray)
+                    .font(.system(size: 14))
                 Text(group.name)
                     .font(.headline)
                 Spacer()
@@ -151,7 +177,6 @@ struct ContactRow: View {
         let year = calendar.component(.year, from: date)
         
         let formatter = DateFormatter()
-        // If the year is 1 or 1900 (common placeholder for no year), only show month and day
         if year <= 1900 {
             formatter.dateFormat = "MMMM d"
         } else {
