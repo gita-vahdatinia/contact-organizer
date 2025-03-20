@@ -4,18 +4,25 @@ import CoreData
 
 class ContactManager: ObservableObject {
     @Published var contacts: [ContactModel] = []
-
-    let store = CNContactStore()
-    let context = CoreDataManager.shared.context
-
+    
+    private let store = CNContactStore()
+    private let context = CoreDataManager.shared.context
+    
+    private let contactKeys: [CNKeyDescriptor] = [
+        CNContactGivenNameKey as CNKeyDescriptor,
+        CNContactFamilyNameKey as CNKeyDescriptor,
+        CNContactPhoneNumbersKey as CNKeyDescriptor,
+        CNContactBirthdayKey as CNKeyDescriptor,
+        CNContactIdentifierKey as CNKeyDescriptor
+    ]
+    
     func fetchContacts() {
         let request: NSFetchRequest<ContactEntity> = ContactEntity.fetchRequest()
-
+        
         do {
             let savedContacts = try context.fetch(request)
-
+            
             if savedContacts.isEmpty {
-                print("No contacts in Core Data, importing from iOS Contacts.")
                 importContactsFromiOS()
             } else {
                 contacts = savedContacts.map { $0.toModel() }
@@ -24,39 +31,26 @@ class ContactManager: ObservableObject {
             print("Error fetching contacts from Core Data: \(error)")
         }
     }
-        
+    
     func importContactsFromiOS() {
         DispatchQueue.global(qos: .userInitiated).async {
-            let keys = [
-                CNContactGivenNameKey as CNKeyDescriptor,
-                CNContactFamilyNameKey as CNKeyDescriptor,
-                CNContactPhoneNumbersKey as CNKeyDescriptor,
-                CNContactBirthdayKey as CNKeyDescriptor,  // ✅ Ensure birthday is requested
-                CNContactIdentifierKey as CNKeyDescriptor // ✅ Ensure identifier is requested
-            ]
+            let request = CNContactFetchRequest(keysToFetch: self.contactKeys)
             
-            let request = CNContactFetchRequest(keysToFetch: keys)
-            var newContacts: [ContactModel] = []
-
             do {
-                try self.store.enumerateContacts(with: request) { (contact, _) in
-                    let fullName = "\(contact.givenName) \(contact.familyName)"
+                try self.store.enumerateContacts(with: request) { [weak self] contact, _ in
+                    guard let self = self else { return }
+                    
+                    let fullName = "\(contact.givenName) \(contact.familyName)".trimmingCharacters(in: .whitespaces)
                     let phone = contact.phoneNumbers.first?.value.stringValue
-
-                    // Convert CNContact.birthday (DateComponents) into Date
-                    var birthdayDate: Date? = nil
-                    if let birthday = contact.birthday {
-                        let calendar = Calendar.current
-                        birthdayDate = calendar.date(from: birthday)
-                    }
-
-                    print("Imported contact: \(fullName), Birthday: \(String(describing: birthdayDate))")
-
+                    let birthdayDate = contact.birthday.flatMap { Calendar.current.date(from: $0) }
+                    
                     let newContact = ContactModel(
-                        name: fullName, phoneNumber: phone, birthday: birthdayDate, group: .never
+                        name: fullName,
+                        phoneNumber: phone,
+                        birthday: birthdayDate,
+                        group: .never
                     )
-                    newContacts.append(newContact)
-
+                    
                     // Save to Core Data
                     let entity = ContactEntity(context: self.context)
                     entity.id = newContact.id
@@ -65,15 +59,77 @@ class ContactManager: ObservableObject {
                     entity.group = newContact.group.rawValue
                     entity.birthday = birthdayDate
                 }
-
+                
                 CoreDataManager.shared.save()
-
+                
                 DispatchQueue.main.async {
-                    self.fetchContacts() // Refresh the UI
+                    self.fetchContacts()
                 }
             } catch {
                 print("Failed to import contacts: \(error)")
             }
+        }
+    }
+    
+    func fetchContactsInGroup(groupIdentifier: String) -> [CNContact] {
+        let predicate = CNContact.predicateForContactsInGroup(withIdentifier: groupIdentifier)
+        
+        do {
+            return try store.unifiedContacts(matching: predicate, keysToFetch: contactKeys)
+        } catch {
+            print("Failed to fetch contacts for group \(groupIdentifier): \(error)")
+            return []
+        }
+    }
+    
+    func fetchiCloudContactLists() -> [CNGroup] {
+        do {
+            return try store.groups(matching: nil)
+        } catch {
+            print("Failed to fetch iCloud Contact Lists: \(error)")
+            return []
+        }
+    }
+    
+    func saveContact(_ contact: ContactModel) {
+        let entity = ContactEntity(context: context)
+        entity.id = contact.id
+        entity.name = contact.name
+        entity.phoneNumber = contact.phoneNumber
+        entity.birthday = contact.birthday
+        entity.group = contact.group.rawValue
+        
+        CoreDataManager.shared.save()
+        fetchContacts()
+    }
+    
+    func updateContactGroup(contact: ContactModel, newGroup: ContactGroup) {
+        let request: NSFetchRequest<ContactEntity> = ContactEntity.fetchRequest()
+        request.predicate = NSPredicate(format: "id == %@", contact.id as CVarArg)
+        
+        do {
+            if let entity = try context.fetch(request).first {
+                entity.group = newGroup.rawValue
+                CoreDataManager.shared.save()
+                fetchContacts()
+            }
+        } catch {
+            print("Error updating contact group: \(error)")
+        }
+    }
+    
+    func deleteContact(_ contact: ContactModel) {
+        let request: NSFetchRequest<ContactEntity> = ContactEntity.fetchRequest()
+        request.predicate = NSPredicate(format: "id == %@", contact.id as CVarArg)
+        
+        do {
+            if let entity = try context.fetch(request).first {
+                context.delete(entity)
+                CoreDataManager.shared.save()
+                fetchContacts()
+            }
+        } catch {
+            print("Error deleting contact: \(error)")
         }
     }
 
@@ -98,7 +154,6 @@ class ContactManager: ObservableObject {
         }
     }
 
-
     func createiCloudContactList(listName: String) {
         let store = CNContactStore()
         
@@ -121,50 +176,6 @@ class ContactManager: ObservableObject {
         }
     }
 
-    func saveContact(_ contact: ContactModel) {
-        let entity = ContactEntity(context: context)
-        entity.id = contact.id
-        entity.name = contact.name
-        entity.phoneNumber = contact.phoneNumber
-        entity.birthday = contact.birthday
-        entity.group = contact.group.rawValue
-
-        CoreDataManager.shared.save()
-        fetchContacts() // Refresh list
-    }
-
-    func updateContactGroup(contact: ContactModel, newGroup: ContactGroup) {
-        let request: NSFetchRequest<ContactEntity> = ContactEntity.fetchRequest()
-        request.predicate = NSPredicate(format: "id == %@", contact.id as CVarArg)
-
-        do {
-            let results = try context.fetch(request)
-            if let entity = results.first {
-                entity.group = newGroup.rawValue
-                CoreDataManager.shared.save()
-                fetchContacts()
-            }
-        } catch {
-            print("Error updating contact group: \(error)")
-        }
-    }
-
-    func deleteContact(_ contact: ContactModel) {
-        let request: NSFetchRequest<ContactEntity> = ContactEntity.fetchRequest()
-        request.predicate = NSPredicate(format: "id == %@", contact.id as CVarArg)
-
-        do {
-            let results = try context.fetch(request)
-            if let entity = results.first {
-                context.delete(entity)
-                CoreDataManager.shared.save()
-                fetchContacts()
-            }
-        } catch {
-            print("Error deleting contact: \(error)")
-        }
-    }
-
     func fetchiCloudContactAccount() -> CNContainer? {
         let store = CNContactStore()
         
@@ -182,47 +193,5 @@ class ContactManager: ObservableObject {
         
         return nil
     }
-
-
-
-    func fetchContactsInGroup(groupIdentifier: String) -> [CNContact] {
-        let store = CNContactStore()
-        var contacts: [CNContact] = []
-
-        let predicate = CNContact.predicateForContactsInGroup(withIdentifier: groupIdentifier)
-        let keysToFetch: [CNKeyDescriptor] = [
-            CNContactGivenNameKey as CNKeyDescriptor,
-            CNContactFamilyNameKey as CNKeyDescriptor,
-            CNContactPhoneNumbersKey as CNKeyDescriptor,
-            CNContactBirthdayKey as CNKeyDescriptor,  // ✅ Request birthday explicitly
-            CNContactIdentifierKey as CNKeyDescriptor // ✅ Ensure we get a unique identifier
-        ]
-
-        do {
-            contacts = try store.unifiedContacts(matching: predicate, keysToFetch: keysToFetch)
-            print("📂 Found \(contacts.count) contacts in group \(groupIdentifier)")
-        } catch {
-            print("❌ Failed to fetch contacts for group \(groupIdentifier): \(error)")
-        }
-
-        return contacts
-    }
-
-
-    func fetchiCloudContactLists() -> [CNGroup] {
-        let store = CNContactStore()
-        var groups: [CNGroup] = []
-        
-        do {
-            groups = try store.groups(matching: nil)
-            for group in groups {
-                print("📂 Found Contact List: \(group.name) - ID: \(group.identifier)")
-            }
-        } catch {
-            print("❌ Failed to fetch iCloud Contact Lists: \(error)")
-        }
-        
-        return groups
-    }
-
 }
+
