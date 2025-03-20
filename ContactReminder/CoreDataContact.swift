@@ -7,7 +7,7 @@ extension ContactEntity {
             name: name ?? "Unknown",
             phoneNumber: phoneNumber,
             birthday: birthday,
-            group: ContactGroup(rawValue: group ?? "Daily") ?? .daily
+            group: ContactGroup(rawValue: group ?? "Never") ?? .never
         )
     }
 }

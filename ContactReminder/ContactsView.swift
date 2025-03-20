@@ -1,83 +1,162 @@
 import SwiftUI
+import Contacts
 
 struct ContactsView: View {
     @ObservedObject var contactManager = ContactManager()
-    @State private var reverseOrder = false
+    @State private var iCloudLists: [CNGroup] = []
+    @State private var showingBirthdayView = false
+    @Environment(\.scenePhase) private var scenePhase
+    @State private var expandedGroups: Set<String> = []
 
     var body: some View {
         NavigationView {
             List {
-                NavigationLink(destination: BirthdayMonthView(contactManager: contactManager)) {
-                    Text("View Birthdays by Month")
-                }
-                
-                Toggle("Reverse Order", isOn: $reverseOrder)
-                
-                ForEach(reverseOrder ? ContactGroup.allCases.reversed() : ContactGroup.allCases, id: \.self) { group in
-                    let filteredContacts = contactManager.contacts.filter { $0.group == group }
-
-                    if !filteredContacts.isEmpty {
-                        Section(header: Text(group.rawValue)) {
-                            ForEach(filteredContacts) { contact in
-                                ContactRow(contact: contact, contactManager: contactManager)
+                ForEach(iCloudLists, id: \.identifier) { group in
+                    GroupSection(
+                        group: group,
+                        contacts: contactManager.fetchContactsInGroup(groupIdentifier: group.identifier),
+                        isExpanded: expandedGroups.contains(group.identifier),
+                        onToggle: { isExpanded in
+                            if isExpanded {
+                                expandedGroups.insert(group.identifier)
+                            } else {
+                                expandedGroups.remove(group.identifier)
                             }
-                        }
+                        },
+                        contactManager: contactManager
+                    )
+                }
+            }
+            .navigationTitle("Baddies Only")
+                .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .navigationBarTrailing) {
+                    Button(action: {
+                        showingBirthdayView.toggle()
+                    }) {
+                        Image(systemName: "gift.fill")
+                            .foregroundColor(.blue)
                     }
                 }
             }
-            .navigationTitle("Contact Groups")
+            .sheet(isPresented: $showingBirthdayView) {
+                BirthdayMonthView(contactManager: contactManager)
+            }
             .onAppear {
-                contactManager.fetchContacts()
+                refreshData()
+            }
+            .onChange(of: scenePhase) { newPhase in
+                if newPhase == .active {
+                    refreshData()
+                }
+            }
+        }
+    }
+    
+    private func refreshData() {
+        iCloudLists = contactManager.fetchiCloudContactLists()
+        contactManager.fetchContacts()
+    }
+}
+
+struct GroupSection: View {
+    let group: CNGroup
+    let contacts: [CNContact]
+    let isExpanded: Bool
+    let onToggle: (Bool) -> Void
+    let contactManager: ContactManager
+    
+    var body: some View {
+        DisclosureGroup(
+            isExpanded: Binding(
+                get: { isExpanded },
+                set: { onToggle($0) }
+            )
+        ) {
+            if contacts.isEmpty {
+                Text("No contacts in this list")
+                    .foregroundColor(.gray)
+                    .padding(.leading)
+            } else {
+                ForEach(contacts, id: \.identifier) { contact in
+                    ContactRow(contact: contact, contactManager: contactManager)
+                        .padding(.leading)
+                }
+            }
+        } label: {
+            HStack {
+                Text(group.name)
+                    .font(.headline)
+                Spacer()
+                Text("\(contacts.count) contacts")
+                    .font(.subheadline)
+                    .foregroundColor(.gray)
             }
         }
     }
 }
 
 struct ContactRow: View {
-    var contact: ContactModel
-    var contactManager: ContactManager
+    let contact: CNContact
+    @ObservedObject var contactManager: ContactManager
     @Environment(\.openURL) private var openURL
-
+    
+    private var fullName: String {
+        "\(contact.givenName) \(contact.familyName)".trimmingCharacters(in: .whitespaces)
+    }
+    
+    private var birthdayText: String? {
+        guard let birthdayComponents = contact.birthday,
+              let birthdayDate = Calendar.current.date(from: birthdayComponents) else {
+            return nil
+        }
+        return "🎂 Birthday: \(formattedDate(birthdayDate))"
+    }
+    
+    private var phoneNumber: String? {
+        contact.phoneNumbers.first?.value.stringValue
+    }
+    
     var body: some View {
-        VStack(alignment: .leading, spacing: 5) {
-            Text(contact.name).font(.headline)
-            
-            if let birthday = contact.birthday {
-                Text("🎂 Birthday: \(formattedDate(birthday))")
-                    .font(.subheadline)
-                    .foregroundColor(.blue)
-            }
-
-            
-            if let phone = contact.phoneNumber {
-                Text(phone)
-                    .font(.subheadline)
-                    .foregroundColor(.blue)
-                    .onTapGesture {
-                        if let url = URL(string: "sms:\(phone.replacingOccurrences(of: " ", with: ""))") {
-                            openURL(url)
+        HStack {
+            VStack(alignment: .leading, spacing: 5) {
+                Text(fullName)
+                    .font(.headline)
+                
+                if let birthday = birthdayText {
+                    Text(birthday)
+                        .font(.subheadline)
+                        .foregroundColor(.blue)
+                }
+                
+                if let phone = phoneNumber {
+                    Text(phone)
+                        .font(.subheadline)
+                        .foregroundColor(.blue)
+                        .onTapGesture {
+                            if let url = URL(string: "sms:\(phone.replacingOccurrences(of: " ", with: ""))") {
+                                openURL(url)
+                            }
                         }
-                    }
+                }
             }
             
-            Picker("", selection: Binding(
-                get: { contact.group },
-                set: { newGroup in
-                    contactManager.updateContactGroup(contact: contact, newGroup: newGroup)
-                }
-            )) {
-                ForEach(ContactGroup.allCases, id: \.self) { group in
-                    Text(group.rawValue).tag(group)
-                }
-            }
-            .pickerStyle(MenuPickerStyle()) // Dropdown picker
+            Spacer()
         }
         .padding(.vertical, 5)
     }
     
     private func formattedDate(_ date: Date) -> String {
+        let calendar = Calendar.current
+        let year = calendar.component(.year, from: date)
+        
         let formatter = DateFormatter()
-        formatter.dateStyle = .long
+        // If the year is 1 or 1900 (common placeholder for no year), only show month and day
+        if year <= 1900 {
+            formatter.dateFormat = "MMMM d"
+        } else {
+            formatter.dateStyle = .long
+        }
         return formatter.string(from: date)
     }
-}
+} 
