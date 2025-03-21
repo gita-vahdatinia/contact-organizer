@@ -5,7 +5,7 @@ import CoreData
 class ContactManager: ObservableObject {
     @Published var contacts: [ContactModel] = []
     
-    private let store = CNContactStore()
+    let store = CNContactStore()
     private let context = CoreDataManager.shared.context
     
     private let contactKeys: [CNKeyDescriptor] = [
@@ -13,7 +13,8 @@ class ContactManager: ObservableObject {
         CNContactFamilyNameKey as CNKeyDescriptor,
         CNContactPhoneNumbersKey as CNKeyDescriptor,
         CNContactBirthdayKey as CNKeyDescriptor,
-        CNContactIdentifierKey as CNKeyDescriptor
+        CNContactIdentifierKey as CNKeyDescriptor,
+        CNContactNoteKey as CNKeyDescriptor
     ]
     
     func fetchContacts() {
@@ -84,7 +85,11 @@ class ContactManager: ObservableObject {
         let predicate = CNContact.predicateForContactsInGroup(withIdentifier: groupIdentifier)
         
         do {
-            return try store.unifiedContacts(matching: predicate, keysToFetch: contactKeys)
+            let contacts = try store.unifiedContacts(matching: predicate, keysToFetch: contactKeys)
+            // Add debug print
+            print("Fetched \(contacts.count) contacts")
+            print("First contact birthday: \(String(describing: contacts.first?.birthday))")
+            return contacts
         } catch {
             print("Failed to fetch contacts for group \(groupIdentifier): \(error)")
             return []
@@ -201,6 +206,43 @@ class ContactManager: ObservableObject {
         }
         
         return nil
+    }
+
+    func addNoteEntry(for contact: CNContact, entry: String) {
+        guard let mutableContact = contact.mutableCopy() as? CNMutableContact else { return }
+        
+        let dateFormatter = DateFormatter()
+        dateFormatter.dateStyle = .medium
+        dateFormatter.timeStyle = .short
+        let timestamp = dateFormatter.string(from: Date())
+        
+        // Create new note with timestamp prefix
+        let newEntry = "📝 \(timestamp)\n\(entry)\n\n"
+        
+        // Prepend new entry to existing notes
+        mutableContact.note = newEntry + (contact.note)
+        
+        let saveRequest = CNSaveRequest()
+        saveRequest.update(mutableContact)
+        
+        do {
+            try store.execute(saveRequest)
+            print("Successfully added note entry")
+        } catch {
+            print("Failed to add note entry: \(error)")
+        }
+    }
+
+    func fetchContact(withId identifier: String) -> CNContact? {
+        let predicate = CNContact.predicateForContacts(withIdentifiers: [identifier])
+        
+        do {
+            let contacts = try store.unifiedContacts(matching: predicate, keysToFetch: contactKeys)
+            return contacts.first
+        } catch {
+            print("Failed to fetch contact: \(error)")
+            return nil
+        }
     }
 }
 
