@@ -12,9 +12,9 @@ struct ContactsView: View {
         NavigationView {
             List {
                 ForEach(iCloudLists, id: \.identifier) { group in
-                    GroupSection(
-                        group: group,
-                        contacts: contactManager.fetchContactsInGroup(groupIdentifier: group.identifier),
+                    SquadSection(
+                        squad: group,
+                        members: contactManager.fetchContactsInGroup(groupIdentifier: group.identifier),
                         isExpanded: expandedGroups.contains(group.identifier),
                         onToggle: { isExpanded in
                             if isExpanded {
@@ -28,15 +28,15 @@ struct ContactsView: View {
                 }
                 .onMove(perform: moveGroups)
             }
-            .navigationTitle("Baddies Only")
-            .navigationBarTitleDisplayMode(.inline)
+            .navigationTitle("My Roster")
+            .navigationBarTitleDisplayMode(.large)
             .toolbar {
                 ToolbarItem(placement: .navigationBarTrailing) {
                     Button(action: {
                         showingBirthdayView.toggle()
                     }) {
                         Image(systemName: "gift.fill")
-                            .foregroundColor(.blue)
+                            .foregroundColor(.pink)
                     }
                 }
             }
@@ -82,9 +82,9 @@ struct ContactsView: View {
     }
 }
 
-struct GroupSection: View {
-    let group: CNGroup
-    let contacts: [CNContact]
+struct SquadSection: View {
+    let squad: CNGroup
+    let members: [CNContact]
     let isExpanded: Bool
     let onToggle: (Bool) -> Void
     let contactManager: ContactManager
@@ -96,13 +96,13 @@ struct GroupSection: View {
                 set: { onToggle($0) }
             )
         ) {
-            if contacts.isEmpty {
-                Text("No contacts in this list")
+            if members.isEmpty {
+                Text("No one in this squad yet")
                     .foregroundColor(.gray)
                     .padding(.leading)
             } else {
-                ForEach(contacts, id: \.identifier) { contact in
-                    ContactRow(contact: contact, contactManager: contactManager)
+                ForEach(members, id: \.identifier) { member in
+                    MemberRow(member: member, contactManager: contactManager)
                         .padding(.leading)
                 }
             }
@@ -111,29 +111,30 @@ struct GroupSection: View {
                 Image(systemName: "line.3.horizontal")
                     .foregroundColor(.gray)
                     .font(.system(size: 14))
-                Text(group.name)
+                Text(squad.name)
                     .font(.headline)
                 Spacer()
-                Text("\(contacts.count) contacts")
+                Text("\(members.count)")
                     .font(.subheadline)
                     .foregroundColor(.gray)
             }
+            .padding(.vertical, 8)
         }
     }
 }
 
-struct ContactRow: View {
-    let contact: CNContact
+struct MemberRow: View {
+    let member: CNContact
     @ObservedObject var contactManager: ContactManager
     @Environment(\.openURL) private var openURL
     @State private var showingNotes = false
     
     private var fullName: String {
-        "\(contact.givenName) \(contact.familyName)".trimmingCharacters(in: .whitespaces)
+        "\(member.givenName) \(member.familyName)".trimmingCharacters(in: .whitespaces)
     }
     
     private var birthdayText: String? {
-        guard let birthdayComponents = contact.birthday,
+        guard let birthdayComponents = member.birthday,
               let birthdayDate = Calendar.current.date(from: birthdayComponents) else {
             return nil
         }
@@ -143,7 +144,7 @@ struct ContactRow: View {
     }
     
     private var phoneNumber: String? {
-        contact.phoneNumbers.first?.value.stringValue
+        member.phoneNumbers.first?.value.stringValue
     }
     
     private func getZodiacSign(date: Date) -> String {
@@ -185,7 +186,7 @@ struct ContactRow: View {
         HStack {
             VStack(alignment: .leading, spacing: 5) {
                 Text(fullName)
-                    .font(.headline)
+                    .font(.system(.headline, design: .rounded))
                 
                 if let birthday = birthdayText {
                     Text("\(birthday)")
@@ -210,13 +211,13 @@ struct ContactRow: View {
             Button(action: {
                 showingNotes.toggle()
             }) {
-                Image(systemName: "note.text")
-                    .foregroundColor(.blue)
+                Image(systemName: "note.text.badge.plus")
+                    .foregroundColor(.pink)
             }
         }
-        .padding(.vertical, 5)
+        .padding(.vertical, 8)
         .sheet(isPresented: $showingNotes) {
-            ContactNotesView(contact: contact, contactManager: contactManager)
+            MemberNotesView(member: member, contactManager: contactManager)
         }
     }
     
@@ -234,19 +235,19 @@ struct ContactRow: View {
     }
 }
 
-struct ContactNotesView: View {
-    let contact: CNContact
+struct MemberNotesView: View {
+    let member: CNContact
     let contactManager: ContactManager
     @Environment(\.dismiss) private var dismiss
     @State private var isEditing = false
     @State private var editedNoteText: String = ""
     @State private var showingAddNote = false
-    @State private var currentContact: CNContact
+    @State private var currentMember: CNContact
     
-    init(contact: CNContact, contactManager: ContactManager) {
-        self.contact = contact
+    init(member: CNContact, contactManager: ContactManager) {
+        self.member = member
         self.contactManager = contactManager
-        _currentContact = State(initialValue: contact)
+        _currentMember = State(initialValue: member)
     }
     
     var body: some View {
@@ -257,7 +258,7 @@ struct ContactNotesView: View {
                         .padding()
                         .font(.body)
                 } else {
-                    if currentContact.note.isEmpty {
+                    if currentMember.note.isEmpty {
                         VStack(spacing: 20) {
                             Image(systemName: "note.text")
                                 .font(.system(size: 50))
@@ -268,14 +269,14 @@ struct ContactNotesView: View {
                         .frame(maxHeight: .infinity)
                     } else {
                         ScrollView {
-                            Text(currentContact.note)
+                            Text(currentMember.note)
                                 .padding()
                                 .frame(maxWidth: .infinity, alignment: .leading)
                         }
                     }
                 }
             }
-            .navigationTitle("\(currentContact.givenName)'s Notes")
+            .navigationTitle("\(currentMember.givenName)'s Notes")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .navigationBarTrailing) {
@@ -287,7 +288,7 @@ struct ContactNotesView: View {
                     } else {
                         Menu {
                             Button(action: {
-                                editedNoteText = currentContact.note
+                                editedNoteText = currentMember.note
                                 isEditing = true
                             }) {
                                 Label("Edit Notes", systemImage: "pencil")
@@ -308,7 +309,7 @@ struct ContactNotesView: View {
                     if isEditing {
                         Button("Cancel") {
                             isEditing = false
-                            editedNoteText = currentContact.note
+                            editedNoteText = currentMember.note
                         }
                     } else {
                         Button("Done") {
@@ -318,21 +319,21 @@ struct ContactNotesView: View {
                 }
             }
             .sheet(isPresented: $showingAddNote) {
-                AddNoteView(contact: currentContact, contactManager: contactManager) {
-                    refreshContact()
+                AddNoteView(member: currentMember, contactManager: contactManager) {
+                    refreshMember()
                 }
             }
         }
     }
     
-    private func refreshContact() {
-        if let updated = contactManager.fetchContact(withId: currentContact.identifier) {
-            currentContact = updated
+    private func refreshMember() {
+        if let updated = contactManager.fetchContact(withId: currentMember.identifier) {
+            currentMember = updated
         }
     }
     
     private func saveNotes() {
-        guard let mutableContact = currentContact.mutableCopy() as? CNMutableContact else { return }
+        guard let mutableContact = currentMember.mutableCopy() as? CNMutableContact else { return }
         mutableContact.note = editedNoteText
         
         let saveRequest = CNSaveRequest()
@@ -341,7 +342,7 @@ struct ContactNotesView: View {
         do {
             try contactManager.store.execute(saveRequest)
             print("Successfully saved notes")
-            refreshContact()
+            refreshMember()
         } catch {
             print("Failed to save notes: \(error)")
         }
@@ -349,7 +350,7 @@ struct ContactNotesView: View {
 }
 
 struct AddNoteView: View {
-    let contact: CNContact
+    let member: CNContact
     let contactManager: ContactManager
     let onSave: () -> Void
     @Environment(\.dismiss) private var dismiss
@@ -373,7 +374,7 @@ struct AddNoteView: View {
                 ToolbarItem(placement: .navigationBarTrailing) {
                     Button("Save") {
                         if !noteText.isEmpty {
-                            contactManager.addNoteEntry(for: contact, entry: noteText)
+                            contactManager.addNoteEntry(for: member, entry: noteText)
                             onSave()
                             dismiss()
                         }
